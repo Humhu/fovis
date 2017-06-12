@@ -15,6 +15,9 @@
 
 #include "visualization.hpp"
 
+#include <memory>
+#include <paraset/ParameterManager.hpp>
+
 namespace fovis_ros
 {
 
@@ -27,10 +30,7 @@ class OdometerBase
 protected:
 
   OdometerBase() : 
-    visual_odometer_(NULL),
-    rectification_(NULL),
-    depth_source_(NULL),
-    visual_odometer_options_(fovis::VisualOdometry::getDefaultOptions()),
+    vo_options_(fovis::VisualOdometry::getDefaultOptions()),
     nh_local_("~"),
     it_(nh_local_)
   {
@@ -41,21 +41,44 @@ protected:
     features_pub_ = it_.advertise("features", 1);
   }
 
-  virtual ~OdometerBase()
-  {
-    if (visual_odometer_) delete visual_odometer_;
-    if (rectification_) delete rectification_;
-  }
-
   const fovis::VisualOdometryOptions& getOptions() const
   {
-    return visual_odometer_options_;
+	vo_options_["feature-window-size"] = std::to_string( int(feature_window_size_) );
+	vo_options_["max-pyramid-level"] = std::to_string( int(pyramid_levels_) );
+	vo_options_["min-pyramid-level"] = std::to_string( int(0) );
+	vo_options_["target-pixels-per-feature"] = std::to_string( int(target_pixels_per_feature_) );
+	vo_options_["fast-threshold"] = std::to_string( int(fast_threshold_) );
+	vo_options_["use-adaptive-threshold"] = use_adaptive_threshold_ ? "true" : "false";
+	vo_options_["fast-threshold-adaptive-gain"] = std::to_string( fast_threshold_adaptive_gain_ );
+	vo_options_["use-homography-initialization"] = use_homography_initialization_ ? "true" : "false";
+	vo_options_["ref-frame-change-threshold"] = std::to_string( int(ref_frame_change_threshold_) );
+
+	vo_options_["use-bucketing"] = use_bucketing_? "true" : "false";
+	vo_options_["bucket-width"] = std::to_string( int(bucket_dim_) );
+	vo_options_["bucket-height"] = std::to_string( int(bucket_dim_) );
+	vo_options_["max-keypoints-per-bucket"] = std::to_string( int(max_keypoints_per_bucket_) );
+	vo_options_["use-image-normalization"] = use_image_normalization_ ? "true" : "false";
+
+	vo_options_["inlier-max-reprojection-error"] = std::to_string(inlier_max_reprojection_error_);
+	vo_options_["clique-inlier-threshold"] = std::to_string(clique_inlier_threshold_);
+	vo_options_["min-features-for-estimate"] = std::to_string( int(min_features_for_estimate_) );
+	vo_options_["max-mean-reprojection-error"] = std::to_string(max_mean_reprojection_error_);
+	vo_options_["use-subpixel-refinement"] = use_subpixel_refinement_ ? "true" : "false";
+	vo_options_["feature-search-window"] = std::to_string( int(feature_search_window_) );
+	vo_options_["update-target-features-with-refined"] = update_target_features_with_refined_ ? "true" : "false";
+
+	vo_options_["stereo-require-mutual-match"] = stereo_require_mutual_match_ ? "true" : "false";
+	vo_options_["stereo-max-dist-epipolar-line"] = std::to_string(stereo_max_dist_epipolar_line_);
+	vo_options_["stereo-max-refinement-displacement"] = std::to_string(stereo_max_refinement_displacement_);
+	vo_options_["stereo-max-disparity"] = std::to_string( int(stereo_max_disparity_) );
+
+    return vo_options_;
   }
 
   /**
    * Sets the depth source, must be called once before calling process()
    */
-  void setDepthSource(fovis::DepthSource* source)
+  void setDepthSource(std::shared_ptr<fovis::DepthSource> source)
   {
     depth_source_ = source;
   }
@@ -82,13 +105,13 @@ protected:
     ros::WallTime start_time = ros::WallTime::now();
 
     bool first_run = false;
-    if (visual_odometer_ == NULL)
+    if (!visual_odometer_)
     {
       first_run = true;
       initOdometer(info_msg);
     }
-    ROS_ASSERT(visual_odometer_ != NULL);
-    ROS_ASSERT(depth_source_ != NULL);
+    ROS_ASSERT(visual_odometer_);
+    ROS_ASSERT(depth_source_);
 
     // convert image if necessary
     uint8_t *image_data;
@@ -100,7 +123,7 @@ protected:
     ROS_ASSERT(step == static_cast<int>(image_msg->width));
 
     // pass image to odometer
-    visual_odometer_->processFrame(image_data, depth_source_);
+    visual_odometer_->processFrame(image_data, depth_source_.get());
 
     // skip visualization on first run as no reference image is present
     if (!first_run && features_pub_.getNumSubscribers() > 0)
@@ -109,7 +132,7 @@ protected:
       cv_image.header.stamp = image_msg->header.stamp;
       cv_image.header.frame_id = image_msg->header.frame_id;
       cv_image.encoding = sensor_msgs::image_encodings::BGR8;
-      cv_image.image = visualization::paint(visual_odometer_);
+      cv_image.image = visualization::paint(visual_odometer_.get());
       features_pub_.publish(cv_image.toImageMsg());
     }
 
@@ -249,8 +272,10 @@ private:
     fovis::Rectification* rectification = new fovis::Rectification(cam_params);
 
     // instanciate odometer
-    visual_odometer_ = 
-      new fovis::VisualOdometry(rectification, visual_odometer_options_);
+    //visual_odometer_ = 
+    //  new fovis::VisualOdometry(rectification, vo_options_);
+	visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
+	                                                            vo_options_ );
 
     // store initial transform for later usage
     getBaseToSensorTransform(info_msg->header.stamp, 
@@ -260,8 +285,8 @@ private:
     // print options
     std::stringstream info;
     info << "Initialized fovis odometry with the following options:\n";
-    for (fovis::VisualOdometryOptions::iterator iter = visual_odometer_options_.begin();
-        iter != visual_odometer_options_.end();
+    for (fovis::VisualOdometryOptions::iterator iter = vo_options_.begin();
+        iter != vo_options_.end();
         ++iter)
     {
       std::string key = iter->first;
@@ -280,25 +305,100 @@ private:
     nh_local_.param("base_link_frame_id", base_link_frame_id_, std::string("/base_link"));
     nh_local_.param("publish_tf", publish_tf_, true);
 
-    for (fovis::VisualOdometryOptions::iterator iter = visual_odometer_options_.begin();
-        iter != visual_odometer_options_.end();
-        ++iter)
-    {
-      // NOTE: this only accepts parameters if given through
-      // launch files with the argument "type" set to "string":
-      //   e.g. <param name="fast_threshold_adaptive_gain" type="string" value="0.001"/>
-      // Passing parameters through the command line does not work as rosparam
-      // automagically treats numbers as int or float and we need strings here.
-      std::string key = iter->first;
-      // to comply with ROS standard of parameter naming
-      std::replace(key.begin(), key.end(), '-', '_');
-      if (nh_local_.hasParam(key))
-      {
-        std::string value;
-        nh_local_.getParam(key, value);
-        visual_odometer_options_[iter->first] = value;
-      }
-    }
+	// TODO Descriptions for parameters!
+	feature_window_size_.InitializeAndRead( nh_local_, 9, "feature_window_size", "");
+	feature_window_size_.AddCheck<argus::IntegerValued>();
+	feature_window_size_.AddCheck<argus::GreaterThanOrEqual>( 0 );
+	
+	pyramid_levels_.InitializeAndRead( nh_local_, 3, "pyramid_levels", "");
+	pyramid_levels_.AddCheck<argus::IntegerValued>();
+	pyramid_levels_.AddCheck<argus::GreaterThanOrEqual>( 0 );
+
+	target_pixels_per_feature_.InitializeAndRead( nh_local_, 250, "target_pix_per_feat", "" );
+	target_pixels_per_feature_.AddCheck<argus::IntegerValued>();
+	target_pixels_per_feature_.AddCheck<argus::GreaterThanOrEqual>( 0 );
+	
+	fast_threshold_.InitializeAndRead( nh_local_, 20, "FAST_threshold", "" );
+	fast_threshold_.AddCheck<argus::IntegerValued>();
+	fast_threshold_.AddCheck<argus::GreaterThanOrEqual>( 0 );
+	fast_threshold_.AddCheck<argus::LessThanOrEqual>( 255 );
+
+	use_adaptive_threshold_.InitializeAndRead( nh_local_, true, "use_adaptive_threshold", "" );
+
+	fast_threshold_adaptive_gain_.InitializeAndRead( nh_local_, 0.005, "FAST_threshold_adaptive_gain", "" );
+	fast_threshold_adaptive_gain_.AddCheck<argus::GreaterThanOrEqual>( 0 );
+
+	use_homography_initialization_.InitializeAndRead( nh_local_, true, "use_homography_initialization", "" );
+
+	ref_frame_change_threshold_.InitializeAndRead( nh_local_, 150, "ref_frame_change_threshold", "" );
+	ref_frame_change_threshold_.AddCheck<argus::IntegerValued>();
+	ref_frame_change_threshold_.AddCheck<argus::GreaterThan>( 0 );	
+
+	use_bucketing_.InitializeAndRead( nh_local_, true, "use_bucketing", "" );
+	
+	bucket_dim_.InitializeAndRead( nh_local_, 80, "bucket_dim", "" );
+	bucket_dim_.AddCheck<argus::IntegerValued>();
+	bucket_dim_.AddCheck<argus::GreaterThan>( 0 );
+
+	max_keypoints_per_bucket_.InitializeAndRead( nh_local_, 25, "max_keypoints_per_bucket", "" );
+	max_keypoints_per_bucket_.AddCheck<argus::IntegerValued>();
+	max_keypoints_per_bucket_.AddCheck<argus::GreaterThan>( 0 );
+
+	use_image_normalization_.InitializeAndRead( nh_local_, false, "use_image_normalization", "" );
+
+	inlier_max_reprojection_error_.InitializeAndRead( nh_local_, 1.5, "inlier_max_reproj_err", "" );
+	inlier_max_reprojection_error_.AddCheck<argus::GreaterThan>( 0.0 );
+
+	clique_inlier_threshold_.InitializeAndRead( nh_local_, 0.1, "clique_inlier_threshold", "" );
+	clique_inlier_threshold_.AddCheck<argus::GreaterThan>( 0.0 );
+
+	min_features_for_estimate_.InitializeAndRead( nh_local_, 10, "min_features_for_estimate", "" );
+	min_features_for_estimate_.AddCheck<argus::IntegerValued>();
+	min_features_for_estimate_.AddCheck<argus::GreaterThan>( 0 );
+
+	max_mean_reprojection_error_.InitializeAndRead( nh_local_, 10.0, "max_mean_reproj_err", "" );
+	max_mean_reprojection_error_.AddCheck<argus::GreaterThan>( 0.0 );
+
+	use_subpixel_refinement_.InitializeAndRead( nh_local_, true, "use_subpixel_refinement", "" );
+
+	feature_search_window_.InitializeAndRead( nh_local_, 25, "feature_search_window", "" );
+	feature_search_window_.AddCheck<argus::IntegerValued>();
+	feature_search_window_.AddCheck<argus::GreaterThan>( 0 );
+
+	update_target_features_with_refined_.InitializeAndRead( nh_local_, false, "update_target_features_with_refined", "" );
+
+	stereo_require_mutual_match_.InitializeAndRead( nh_local_, true, "stereo_require_mutual_match", "" );
+
+	stereo_max_dist_epipolar_line_.InitializeAndRead( nh_local_, 1.5, "stereo_max_dist_epipolar_line", "" );
+	stereo_max_dist_epipolar_line_.AddCheck<argus::GreaterThan>( 0.0 );
+
+	stereo_max_refinement_displacement_.InitializeAndRead( nh_local_, 1.0, "stereo_max_refinement_displacement", "" );
+	stereo_max_refinement_displacement_.AddCheck<argus::GreaterThan>( 0.0 );
+
+	stereo_max_disparity_.InitializeAndRead( nh_local_, 128, "stereo_max_disparity", "" );
+	stereo_max_disparity_.AddCheck<argus::IntegerValued>();
+	stereo_max_disparity_.AddCheck<argus::GreaterThan>( 0 );
+
+	// NOTE Overriding this with paraset initializations
+    // for (fovis::VisualOdometryOptions::iterator iter = vo_options_.begin();
+    //     iter != vo_options_.end();
+    //     ++iter)
+    // {
+    //   // NOTE: this only accepts parameters if given through
+    //   // launch files with the argument "type" set to "string":
+    //   //   e.g. <param name="fast_threshold_adaptive_gain" type="string" value="0.001"/>
+    //   // Passing parameters through the command line does not work as rosparam
+    //   // automagically treats numbers as int or float and we need strings here.
+    //   std::string key = iter->first;
+    //   // to comply with ROS standard of parameter naming
+    //   std::replace(key.begin(), key.end(), '-', '_');
+    //   if (nh_local_.hasParam(key))
+    //   {
+    //     std::string value;
+    //     nh_local_.getParam(key, value);
+    //     vo_options_[iter->first] = value;
+    //   }
+    // }
   }
 
   void getBaseToSensorTransform(const ros::Time& stamp, 
@@ -337,10 +437,41 @@ private:
 
 private:
 
-  fovis::VisualOdometry* visual_odometer_;
-  fovis::Rectification* rectification_;
-  fovis::DepthSource* depth_source_;
-  fovis::VisualOdometryOptions visual_odometer_options_;
+  std::shared_ptr<fovis::VisualOdometry> visual_odometer_;
+  std::shared_ptr<fovis::Rectification> rectification_;
+  std::shared_ptr<fovis::DepthSource> depth_source_;
+  
+  // NOTE "options" parameters is overridden by runtime params below
+  // List of parameters found in libfovis/visual_odometry.cpp:296
+  // NOTE min-pyramid-level is forced to value 0
+  mutable fovis::VisualOdometryOptions vo_options_;
+  argus::NumericParam feature_window_size_;
+  argus::NumericParam pyramid_levels_;
+  argus::NumericParam target_pixels_per_feature_;
+  argus::NumericParam fast_threshold_;
+  argus::BooleanParam use_adaptive_threshold_;
+  argus::NumericParam fast_threshold_adaptive_gain_;
+  argus::BooleanParam use_homography_initialization_;
+  argus::NumericParam ref_frame_change_threshold_;
+
+  // NOTE bucket-width and bucket-height are tied
+  argus::BooleanParam use_bucketing_;
+  argus::NumericParam bucket_dim_;
+  argus::NumericParam max_keypoints_per_bucket_;
+  argus::BooleanParam use_image_normalization_;
+
+  argus::NumericParam inlier_max_reprojection_error_;
+  argus::NumericParam clique_inlier_threshold_;
+  argus::NumericParam min_features_for_estimate_;
+  argus::NumericParam max_mean_reprojection_error_;
+  argus::NumericParam use_subpixel_refinement_;
+  argus::NumericParam feature_search_window_;
+  argus::BooleanParam update_target_features_with_refined_;
+
+  argus::BooleanParam stereo_require_mutual_match_;
+  argus::NumericParam stereo_max_dist_epipolar_line_;
+  argus::NumericParam stereo_max_refinement_displacement_;
+  argus::NumericParam stereo_max_disparity_;
 
   ros::Time last_time_;
 

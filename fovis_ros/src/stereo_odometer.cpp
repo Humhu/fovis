@@ -12,6 +12,8 @@
 #include "odometer_base.hpp"
 #include "visualization.hpp"
 
+#include <memory>
+
 namespace fovis_ros
 {
 
@@ -20,26 +22,19 @@ class StereoOdometer : public StereoProcessor, OdometerBase
 
 private:
 
-  fovis::StereoDepth* stereo_depth_;
+  std::shared_ptr<fovis::StereoDepth> stereo_depth_;
 
 public:
 
   StereoOdometer(const std::string& transport) :
-    StereoProcessor(transport),
-    stereo_depth_(NULL)
-  {
-  }
-
-  ~StereoOdometer()
-  {
-    if (stereo_depth_) delete stereo_depth_;
-  }
+    StereoProcessor(transport)
+  {}
 
 protected:
 
-  fovis::StereoDepth* createStereoDepth(
+  void initStereoDepth(
       const sensor_msgs::CameraInfoConstPtr& l_info_msg,
-      const sensor_msgs::CameraInfoConstPtr& r_info_msg) const
+      const sensor_msgs::CameraInfoConstPtr& r_info_msg)
   {
     // read calibration info from camera info message
     // to fill remaining parameters
@@ -70,10 +65,13 @@ protected:
     stereo_parameters.right_to_left_translation[1] = 0.0;
     stereo_parameters.right_to_left_translation[2] = 0.0;
 
+	// NOTE This is left raw since fovis::StereoDepth takes ownership
     fovis::StereoCalibration* stereo_calibration =
       new fovis::StereoCalibration(stereo_parameters);
 
-    return new fovis::StereoDepth(stereo_calibration, getOptions());
+    //return new fovis::StereoDepth(stereo_calibration, getOptions());
+	stereo_depth_ = std::make_shared<fovis::StereoDepth>(stereo_calibration,
+	                                                     getOptions());
   }
 
   void imageCallback(
@@ -84,7 +82,7 @@ protected:
   {
     if (!stereo_depth_)
     {
-      stereo_depth_ = createStereoDepth(l_info_msg, r_info_msg);
+      initStereoDepth(l_info_msg, r_info_msg);
       setDepthSource(stereo_depth_);
     }
     // convert image if necessary
