@@ -80,11 +80,12 @@ protected:
       const sensor_msgs::CameraInfoConstPtr& l_info_msg,
       const sensor_msgs::CameraInfoConstPtr& r_info_msg)
   {
-    if (!stereo_depth_)
-    {
-      initStereoDepth(l_info_msg, r_info_msg);
-      setDepthSource(stereo_depth_);
-    }
+    // if (!stereo_depth_)
+    // {
+	// NOTE Force reinitialization on each image pair to read latest parameters
+	initStereoDepth(l_info_msg, r_info_msg);
+	setDepthSource(stereo_depth_);
+    // }
     // convert image if necessary
     uint8_t *r_image_data;
     int r_step;

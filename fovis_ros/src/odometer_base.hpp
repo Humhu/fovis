@@ -4,6 +4,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <nav_msgs/Odometry.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
 
 #include <fovis_ros/FovisInfo.h>
 
@@ -37,6 +38,7 @@ protected:
     loadParams();
     odom_pub_ = nh_local_.advertise<nav_msgs::Odometry>("odometry", 1);
     pose_pub_ = nh_local_.advertise<geometry_msgs::PoseStamped>("pose", 1);
+	twist_pub_ = nh_local_.advertise<geometry_msgs::TwistStamped>("twist", 1);
     info_pub_ = nh_local_.advertise<FovisInfo>("info", 1);
     features_pub_ = it_.advertise("features", 1);
   }
@@ -104,8 +106,12 @@ protected:
   {
     ros::WallTime start_time = ros::WallTime::now();
 
+	// NOTE Want to catch rosbag replaying sim time
+	bool timeReset = image_msg->header.stamp < last_msg_time_;
+	last_msg_time_ = image_msg->header.stamp;
+
     bool first_run = false;
-    if (!visual_odometer_)
+    if(!visual_odometer_ || timeReset)
     {
       first_run = true;
       initOdometer(info_msg);
@@ -144,6 +150,9 @@ protected:
     pose_msg_.header.stamp = image_msg->header.stamp;
     pose_msg_.header.frame_id = base_link_frame_id_;
 
+	twist_msg_.header.stamp = image_msg->header.stamp;
+	twist_msg_.header.frame_id = base_link_frame_id_;
+
     // on success, start fill message and tf
     fovis::MotionEstimateStatusCode status = 
       visual_odometer_->getMotionEstimateStatus();
@@ -175,8 +184,8 @@ protected:
       pose_msg_.pose = odom_msg_.pose.pose;
 
       // can we calculate velocities?
-      double dt = last_time_.isZero() ? 
-        0.0 : (image_msg->header.stamp - last_time_).toSec();
+      double dt = last_succ_time_.isZero() ? 
+        0.0 : (image_msg->header.stamp - last_succ_time_).toSec();
       if (dt > 0.0)
       {
         const Eigen::Isometry3d& motion = visual_odometer_->getMotionEstimate();
@@ -201,21 +210,34 @@ protected:
         // add covariance
         const Eigen::MatrixXd& motion_cov = visual_odometer_->getMotionEstimateCov();
         for (int i=0;i<6;i++)
+		{
           for (int j=0;j<6;j++)
+		  {
             odom_msg_.twist.covariance[j*6+i] = motion_cov(i,j);
+		  }
+		}
+	  	
+		// TODO Publish the twist covariance also?
+		twist_msg_.twist = odom_msg_.twist.twist;
+      	twist_pub_.publish(twist_msg_);	  
       }
       // TODO integrate covariance for pose covariance
-      last_time_ = image_msg->header.stamp;
+      last_succ_time_ = image_msg->header.stamp;
+
+	  odom_pub_.publish(odom_msg_);
+      pose_pub_.publish(pose_msg_);
     }
     else
     {
       // Previous messages with the current timestamp will be published
       ROS_WARN_STREAM("fovis odometry status: " << 
           fovis::MotionEstimateStatusCodeStrings[status]);
-      last_time_ = ros::Time(0);
+      last_succ_time_ = ros::Time(0);
     }
-    odom_pub_.publish(odom_msg_);
-    pose_pub_.publish(pose_msg_);
+
+	// NOTE Don't publish odom/pose if no success!
+    // odom_pub_.publish(odom_msg_);
+    // pose_pub_.publish(pose_msg_);
 
     // create and publish fovis info msg
     FovisInfo fovis_info_msg;
@@ -274,8 +296,11 @@ private:
     // instanciate odometer
     //visual_odometer_ = 
     //  new fovis::VisualOdometry(rectification, vo_options_);
+
+	// TODO Modify fovis::VisualOdometry so we can set the options on every image
+	const fovis::VisualOdometryOptions& options = getOptions();
 	visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
-	                                                            vo_options_ );
+	                                                            options );
 
     // store initial transform for later usage
     getBaseToSensorTransform(info_msg->header.stamp, 
@@ -285,8 +310,8 @@ private:
     // print options
     std::stringstream info;
     info << "Initialized fovis odometry with the following options:\n";
-    for (fovis::VisualOdometryOptions::iterator iter = vo_options_.begin();
-        iter != vo_options_.end();
+    for (fovis::VisualOdometryOptions::const_iterator iter = options.begin();
+        iter != options.end();
         ++iter)
     {
       std::string key = iter->first;
@@ -320,8 +345,9 @@ private:
 	
 	fast_threshold_.InitializeAndRead( nh_local_, 20, "FAST_threshold", "" );
 	fast_threshold_.AddCheck<argus::IntegerValued>();
-	fast_threshold_.AddCheck<argus::GreaterThanOrEqual>( 0 );
-	fast_threshold_.AddCheck<argus::LessThanOrEqual>( 255 );
+	// NOTE These limits are hardcoded into libfovis::visual_odometry.cpp:85
+	fast_threshold_.AddCheck<argus::GreaterThanOrEqual>( 5 );
+	fast_threshold_.AddCheck<argus::LessThanOrEqual>( 70 );
 
 	use_adaptive_threshold_.InitializeAndRead( nh_local_, true, "use_adaptive_threshold", "" );
 
@@ -473,7 +499,8 @@ private:
   argus::NumericParam stereo_max_refinement_displacement_;
   argus::NumericParam stereo_max_disparity_;
 
-  ros::Time last_time_;
+  ros::Time last_succ_time_;
+  ros::Time last_msg_time_;
 
   // tf related
   std::string sensor_frame_id_;
@@ -487,12 +514,14 @@ private:
   // Messages
   nav_msgs::Odometry odom_msg_;
   geometry_msgs::PoseStamped pose_msg_;
+  geometry_msgs::TwistStamped twist_msg_;
 
   ros::NodeHandle nh_local_;
 
   // publisher
   ros::Publisher odom_pub_;
   ros::Publisher pose_pub_;
+  ros::Publisher twist_pub_;  
   ros::Publisher info_pub_;
   image_transport::Publisher features_pub_;
   image_transport::ImageTransport it_;
