@@ -101,12 +101,11 @@ protected:
 
     // Resolve topic names
     ros::NodeHandle nh;
-    std::string stereo_ns = nh.resolveName("stereo");
-    std::string left_topic = ros::names::clean(stereo_ns + "/left/" + nh.resolveName("image"));
-    std::string right_topic = ros::names::clean(stereo_ns + "/right/" + nh.resolveName("image"));
+    std::string left_topic = ros::names::clean("stereo/left/image");
+    std::string right_topic = ros::names::clean("stereo/right/image");
 
-    std::string left_info_topic = stereo_ns + "/left/camera_info";
-    std::string right_info_topic = stereo_ns + "/right/camera_info";
+    std::string left_info_topic = "stereo/left/camera_info";
+    std::string right_info_topic = "stereo/right/camera_info";
 
     // Subscribe to four input topics.
     ROS_INFO("Subscribing to:\n\t* %s\n\t* %s\n\t* %s\n\t* %s", 
@@ -143,6 +142,12 @@ protected:
                                       left_sub_, right_sub_, left_info_sub_, right_info_sub_) );
       exact_sync_->registerCallback(boost::bind(&StereoProcessor::dataCb, this, _1, _2, _3, _4));
     }
+  }
+
+  void reset()
+  {
+    if( exact_sync_ ) { exact_sync_->init(); }
+    if( approximate_sync_ ) { approximate_sync_->init(); }
   }
 
   /**

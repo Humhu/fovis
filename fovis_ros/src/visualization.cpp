@@ -104,11 +104,12 @@ cv::Mat fovis_ros::visualization::paint(const fovis::VisualOdometry* odometry)
   // The data will be copied later anyways.
   const cv::Mat reference_image(height, width, CV_8U, 
       const_cast<unsigned char*>(
-        reference_frame->getLevel(0)->getGrayscaleImage()));
+        reference_frame->getLevel(0)->getGrayscaleImage()),
+        target_frame->getLevel(0)->getGrayscaleImageStride());
   const cv::Mat target_image(height, width, CV_8U,
       const_cast<unsigned char*>(
         target_frame->getLevel(0)->getGrayscaleImage()),
-      target_frame->getLevel(0)->getGrayscaleImageStride());
+        target_frame->getLevel(0)->getGrayscaleImageStride());
 
   cv::Mat canvas(2*height, width, CV_8U);
   cv::Mat upper_canvas(canvas.rowRange(0, height));

@@ -23,14 +23,22 @@ class StereoOdometer : public StereoProcessor, OdometerBase
 private:
 
   std::shared_ptr<fovis::StereoDepth> stereo_depth_;
+  ros::Time _lastTime;
 
 public:
 
   StereoOdometer(const std::string& transport) :
-    StereoProcessor(transport)
+    StereoProcessor(transport), _lastTime( 0 )
   {}
 
 protected:
+
+  void reset()
+  {
+    stereo_depth_.reset();
+    StereoProcessor::reset();
+    OdometerBase::reset();
+  }
 
   void initStereoDepth(
       const sensor_msgs::CameraInfoConstPtr& l_info_msg,
@@ -65,13 +73,13 @@ protected:
     stereo_parameters.right_to_left_translation[1] = 0.0;
     stereo_parameters.right_to_left_translation[2] = 0.0;
 
-	// NOTE This is left raw since fovis::StereoDepth takes ownership
+	  // NOTE This is left raw since fovis::StereoDepth takes ownership
     fovis::StereoCalibration* stereo_calibration =
       new fovis::StereoCalibration(stereo_parameters);
 
     //return new fovis::StereoDepth(stereo_calibration, getOptions());
-	stereo_depth_ = std::make_shared<fovis::StereoDepth>(stereo_calibration,
-	                                                     getOptions());
+	  stereo_depth_ = std::make_shared<fovis::StereoDepth>(stereo_calibration,
+	                                                       getOptions());
   }
 
   void imageCallback(
@@ -80,12 +88,26 @@ protected:
       const sensor_msgs::CameraInfoConstPtr& l_info_msg,
       const sensor_msgs::CameraInfoConstPtr& r_info_msg)
   {
-    // if (!stereo_depth_)
-    // {
-	// NOTE Force reinitialization on each image pair to read latest parameters
-	initStereoDepth(l_info_msg, r_info_msg);
-	setDepthSource(stereo_depth_);
-    // }
+    const ros::Time& currTime = l_image_msg->header.stamp;
+    
+    if( _lastTime.isZero() )
+    {
+      _lastTime = currTime;
+    }
+    double dt = (currTime - _lastTime).toSec();
+    _lastTime = currTime;
+    if( dt < 0.0 )
+    {
+      ROS_INFO_STREAM( "Negative dt detected in stereo image stream. Resetting..." );
+      reset();
+    }
+
+    if (!stereo_depth_)
+    {
+      initStereoDepth(l_info_msg, r_info_msg);
+      setDepthSource(stereo_depth_);
+    }
+
     // convert image if necessary
     uint8_t *r_image_data;
     int r_step;

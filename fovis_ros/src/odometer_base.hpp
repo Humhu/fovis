@@ -45,34 +45,37 @@ protected:
 
   const fovis::VisualOdometryOptions& getOptions() const
   {
-	vo_options_["feature-window-size"] = std::to_string( int(feature_window_size_) );
-	vo_options_["max-pyramid-level"] = std::to_string( int(pyramid_levels_) );
-	vo_options_["min-pyramid-level"] = std::to_string( int(0) );
-	vo_options_["target-pixels-per-feature"] = std::to_string( int(target_pixels_per_feature_) );
-	vo_options_["fast-threshold"] = std::to_string( int(fast_threshold_) );
-	vo_options_["use-adaptive-threshold"] = use_adaptive_threshold_ ? "true" : "false";
-	vo_options_["fast-threshold-adaptive-gain"] = std::to_string( fast_threshold_adaptive_gain_ );
-	vo_options_["use-homography-initialization"] = use_homography_initialization_ ? "true" : "false";
-	vo_options_["ref-frame-change-threshold"] = std::to_string( int(ref_frame_change_threshold_) );
+    // NOTE Need window size to be odd
+    vo_options_["feature-window-size"] = std::to_string( int(2*feature_window_size_ + 1) );
+    vo_options_["max-pyramid-level"] = std::to_string( int(pyramid_levels_) );
+    vo_options_["min-pyramid-level"] = std::to_string( int(0) );
+    vo_options_["target-pixels-per-feature"] = std::to_string( int(target_pixels_per_feature_) );
+    vo_options_["fast-threshold"] = std::to_string( int(fast_threshold_) );
+    vo_options_["use-adaptive-threshold"] = use_adaptive_threshold_ ? "true" : "false";
+    vo_options_["fast-threshold-adaptive-gain"] = std::to_string( fast_threshold_adaptive_gain_ );
+    vo_options_["use-homography-initialization"] = use_homography_initialization_ ? "true" : "false";
+    vo_options_["ref-frame-change-threshold"] = std::to_string( int(ref_frame_change_threshold_) );
 
-	vo_options_["use-bucketing"] = use_bucketing_? "true" : "false";
-	vo_options_["bucket-width"] = std::to_string( int(bucket_dim_) );
-	vo_options_["bucket-height"] = std::to_string( int(bucket_dim_) );
-	vo_options_["max-keypoints-per-bucket"] = std::to_string( int(max_keypoints_per_bucket_) );
-	vo_options_["use-image-normalization"] = use_image_normalization_ ? "true" : "false";
+    vo_options_["use-bucketing"] = use_bucketing_? "true" : "false";
+    vo_options_["bucket-width"] = std::to_string( int(bucket_dim_) );
+    vo_options_["bucket-height"] = std::to_string( int(bucket_dim_) );
+    vo_options_["max-keypoints-per-bucket"] = std::to_string( int(max_keypoints_per_bucket_) );
+    vo_options_["use-image-normalization"] = use_image_normalization_ ? "true" : "false";
 
-	vo_options_["inlier-max-reprojection-error"] = std::to_string(inlier_max_reprojection_error_);
-	vo_options_["clique-inlier-threshold"] = std::to_string(clique_inlier_threshold_);
-	vo_options_["min-features-for-estimate"] = std::to_string( int(min_features_for_estimate_) );
-	vo_options_["max-mean-reprojection-error"] = std::to_string(max_mean_reprojection_error_);
-	vo_options_["use-subpixel-refinement"] = use_subpixel_refinement_ ? "true" : "false";
-	vo_options_["feature-search-window"] = std::to_string( int(feature_search_window_) );
-	vo_options_["update-target-features-with-refined"] = update_target_features_with_refined_ ? "true" : "false";
+    vo_options_["inlier-max-reprojection-error"] = std::to_string(inlier_max_reprojection_error_);
+    vo_options_["clique-inlier-threshold"] = std::to_string(clique_inlier_threshold_);
+    vo_options_["min-features-for-estimate"] = std::to_string( int(min_features_for_estimate_) );
+    vo_options_["max-mean-reprojection-error"] = std::to_string(max_mean_reprojection_error_);
+    vo_options_["use-subpixel-refinement"] = use_subpixel_refinement_ ? "true" : "false";
+    
+    // NOTE Need window size to be odd
+    vo_options_["feature-search-window"] = std::to_string( int(2*feature_search_window_ + 1) );
+    vo_options_["update-target-features-with-refined"] = update_target_features_with_refined_ ? "true" : "false";
 
-	vo_options_["stereo-require-mutual-match"] = stereo_require_mutual_match_ ? "true" : "false";
-	vo_options_["stereo-max-dist-epipolar-line"] = std::to_string(stereo_max_dist_epipolar_line_);
-	vo_options_["stereo-max-refinement-displacement"] = std::to_string(stereo_max_refinement_displacement_);
-	vo_options_["stereo-max-disparity"] = std::to_string( int(stereo_max_disparity_) );
+    vo_options_["stereo-require-mutual-match"] = stereo_require_mutual_match_ ? "true" : "false";
+    vo_options_["stereo-max-dist-epipolar-line"] = std::to_string(stereo_max_dist_epipolar_line_);
+    vo_options_["stereo-max-refinement-displacement"] = std::to_string(stereo_max_refinement_displacement_);
+    vo_options_["stereo-max-disparity"] = std::to_string( int(stereo_max_disparity_) );
 
     return vo_options_;
   }
@@ -97,6 +100,14 @@ protected:
   }
 
   /**
+   * To be called when resetting tracking
+   */
+  void reset()
+  {
+    visual_odometer_.reset();
+  }
+
+  /**
    * To be called by implementing classes after the depth source has
    * been fed with data.
    */
@@ -106,12 +117,8 @@ protected:
   {
     ros::WallTime start_time = ros::WallTime::now();
 
-	// NOTE Want to catch rosbag replaying sim time
-	bool timeReset = image_msg->header.stamp < last_msg_time_;
-	last_msg_time_ = image_msg->header.stamp;
-
     bool first_run = false;
-    if(!visual_odometer_ || timeReset)
+    if(!visual_odometer_)
     {
       first_run = true;
       initOdometer(info_msg);
@@ -150,8 +157,8 @@ protected:
     pose_msg_.header.stamp = image_msg->header.stamp;
     pose_msg_.header.frame_id = base_link_frame_id_;
 
-	twist_msg_.header.stamp = image_msg->header.stamp;
-	twist_msg_.header.frame_id = base_link_frame_id_;
+    twist_msg_.header.stamp = image_msg->header.stamp;
+    twist_msg_.header.frame_id = base_link_frame_id_;
 
     // on success, start fill message and tf
     fovis::MotionEstimateStatusCode status = 
@@ -297,10 +304,10 @@ private:
     //visual_odometer_ = 
     //  new fovis::VisualOdometry(rectification, vo_options_);
 
-	// TODO Modify fovis::VisualOdometry so we can set the options on every image
-	const fovis::VisualOdometryOptions& options = getOptions();
-	visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
-	                                                            options );
+    // TODO Modify fovis::VisualOdometry so we can set the options on every image
+    const fovis::VisualOdometryOptions& options = getOptions();
+    visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
+                                                                options );
 
     // store initial transform for later usage
     getBaseToSensorTransform(info_msg->header.stamp, 
@@ -331,7 +338,7 @@ private:
     nh_local_.param("publish_tf", publish_tf_, true);
 
 	// TODO Descriptions for parameters!
-	feature_window_size_.InitializeAndRead( nh_local_, 9, "feature_window_size", "");
+	feature_window_size_.InitializeAndRead( nh_local_, 4, "feature_window_size", "Window half-size minus 1");
 	feature_window_size_.AddCheck<argus::IntegerValued>();
 	feature_window_size_.AddCheck<argus::GreaterThanOrEqual>( 0 );
 	
@@ -387,7 +394,7 @@ private:
 
 	use_subpixel_refinement_.InitializeAndRead( nh_local_, true, "use_subpixel_refinement", "" );
 
-	feature_search_window_.InitializeAndRead( nh_local_, 25, "feature_search_window", "" );
+	feature_search_window_.InitializeAndRead( nh_local_, 12, "feature_search_window", "Half window size minus 1" );
 	feature_search_window_.AddCheck<argus::IntegerValued>();
 	feature_search_window_.AddCheck<argus::GreaterThan>( 0 );
 
@@ -500,7 +507,6 @@ private:
   argus::NumericParam stereo_max_disparity_;
 
   ros::Time last_succ_time_;
-  ros::Time last_msg_time_;
 
   // tf related
   std::string sensor_frame_id_;
