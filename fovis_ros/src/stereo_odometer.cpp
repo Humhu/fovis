@@ -14,6 +14,9 @@
 
 #include <memory>
 
+#include <fovis_ros/StereoConfig.h>
+#include <dynamic_reconfigure/server.h>
+
 namespace fovis_ros
 {
 
@@ -24,12 +27,62 @@ private:
 
   std::shared_ptr<fovis::StereoDepth> stereo_depth_;
   ros::Time _lastTime;
+  dynamic_reconfigure::Server<StereoConfig> params_server_;
 
 public:
 
   StereoOdometer(const std::string& transport) :
     StereoProcessor(transport), _lastTime( 0 )
-  {}
+  {
+    dynamic_reconfigure::Server<StereoConfig>::CallbackType cb;
+    cb = boost::bind(&StereoOdometer::reconfigureCallback, this, _1, _2);
+    params_server_.setCallback(cb);
+  }
+
+  void reconfigureCallback( StereoConfig& config, uint32_t level )
+  {
+    reset();
+
+    fovis::VisualOdometryOptions& opts = OdometerBase::getOptions();
+    
+    // NOTE Need window size to be odd
+    opts["feature-window-size"] = std::to_string( 2*config.feature_window_size + 1 );
+    opts["max-pyramid-level"] = std::to_string( config.max_pyramid_level );
+    if( config.min_pyramid_level > config.max_pyramid_level )
+    {
+      ROS_WARN_STREAM( "Min pyramid level greater than max! Tweaking...");
+      config.min_pyramid_level = config.max_pyramid_level;
+    }
+    opts["min-pyramid-level"] = std::to_string( config.min_pyramid_level );
+
+    opts["target-pixels-per-feature"] = std::to_string( config.target_pixels_per_feature );
+    opts["fast-threshold"] = std::to_string( config.fast_threshold );
+    opts["use-adaptive-threshold"] = config.use_adaptive_threshold ? "true" : "false";
+    opts["fast-threshold-adaptive-gain"] = std::to_string( config.fast_threshold_adaptive_gain );
+    opts["use-homography-initialization"] = config.use_homography_initialization ? "true" : "false";
+    opts["ref-frame-change-threshold"] = std::to_string( config.ref_frame_change_threshold );
+
+    opts["use-bucketing"] = config.use_bucketing? "true" : "false";
+    opts["bucket-width"] = std::to_string( config.bucket_width );
+    opts["bucket-height"] = std::to_string( config.bucket_height );
+    opts["max-keypoints-per-bucket"] = std::to_string( config.max_keypoints_per_bucket );
+    opts["use-image-normalization"] = config.use_image_normalization ? "true" : "false";
+
+    opts["inlier-max-reprojection-error"] = std::to_string( config.inlier_max_reprojection_error );
+    opts["clique-inlier-threshold"] = std::to_string( config.clique_inlier_threshold );
+    opts["min-features-for-estimate"] = std::to_string( config.min_features_for_estimate );
+    opts["max-mean-reprojection-error"] = std::to_string( config.max_mean_reprojection_error );
+    opts["use-subpixel-refinement"] = config.use_subpixel_refinement ? "true" : "false";
+    
+    // NOTE Need window size to be odd
+    opts["feature-search-window"] = std::to_string( 2*config.feature_search_window + 1 );
+    opts["update-target-features-with-refined"] = config.update_target_features_with_refined ? "true" : "false";
+
+    opts["stereo-require-mutual-match"] = config.stereo_require_mutual_match ? "true" : "false";
+    opts["stereo-max-dist-epipolar-line"] = std::to_string( config.stereo_max_dist_epipolar_line );
+    opts["stereo-max-refinement-displacement"] = std::to_string( config.stereo_max_refinement_displacement );
+    opts["stereo-max-disparity"] = std::to_string( config.stereo_max_disparity );
+  }
 
 protected:
 
@@ -38,6 +91,7 @@ protected:
     stereo_depth_.reset();
     StereoProcessor::reset();
     OdometerBase::reset();
+    _lastTime = ros::Time(0);
   }
 
   void initStereoDepth(
