@@ -28,6 +28,7 @@ private:
   std::shared_ptr<fovis::StereoDepth> stereo_depth_;
   ros::Time _lastTime;
   dynamic_reconfigure::Server<StereoConfig> params_server_;
+  fovis::StereoCalibration::Ptr _stereo_calibration;
 
 public:
 
@@ -128,11 +129,10 @@ protected:
     stereo_parameters.right_to_left_translation[2] = 0.0;
 
 	  // NOTE This is left raw since fovis::StereoDepth takes ownership
-    fovis::StereoCalibration* stereo_calibration =
-      new fovis::StereoCalibration(stereo_parameters);
+    _stereo_calibration = std::make_shared<fovis::StereoCalibration>(stereo_parameters);
 
     //return new fovis::StereoDepth(stereo_calibration, getOptions());
-	  stereo_depth_ = std::make_shared<fovis::StereoDepth>(stereo_calibration,
+	  stereo_depth_ = std::make_shared<fovis::StereoDepth>(_stereo_calibration,
 	                                                       getOptions());
   }
 

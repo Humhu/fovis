@@ -50,7 +50,7 @@ protected:
   /**
    * Sets the depth source, must be called once before calling process()
    */
-  void setDepthSource(std::shared_ptr<fovis::DepthSource> source)
+  void setDepthSource(const std::shared_ptr<fovis::DepthSource>& source)
   {
     depth_source_ = source;
   }
@@ -256,7 +256,7 @@ private:
     model.fromCameraInfo(info_msg);
     fovis::CameraIntrinsicsParameters cam_params;
     rosToFovis(model, cam_params);
-    fovis::Rectification* rectification = new fovis::Rectification(cam_params);
+    rectification_ = std::make_shared<fovis::Rectification>(cam_params);
 
     // instanciate odometer
     //visual_odometer_ = 
@@ -275,7 +275,7 @@ private:
       info << key << " = " << iter->second << std::endl;
     }
     ROS_INFO_STREAM(info.str());
-    visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
+    visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification_,
                                                                 vo_options_ );
 
     // store initial transform for later usage
