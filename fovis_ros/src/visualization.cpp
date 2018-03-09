@@ -14,14 +14,14 @@ void _drawPyramidLevelMatches(const fovis::VisualOdometry* odometry, int level,
   cv::Mat target_canvas(canvas.rowRange(0, canvas.rows/2));
   cv::Mat reference_canvas(canvas.rowRange(canvas.rows/2, canvas.rows));
  
-  const PyramidLevel* reference_level = odometry->getReferenceFrame()->getLevel(0);
+  const PyramidLevel::Ptr& reference_level = odometry->getReferenceFrame()->getLevel(0);
   for (int i = 0; i < reference_level->getNumKeypoints(); ++i)
   {
     const KeyPoint& kp = reference_level->getKeypoint(i);
     cv::Point2f center(kp.u, kp.v);
     cv::circle(reference_canvas, center, (level+1)*10, cv::Scalar(255, 0, 0));
   }
-  const PyramidLevel* target_level = odometry->getTargetFrame()->getLevel(0);
+  const PyramidLevel::Ptr& target_level = odometry->getTargetFrame()->getLevel(0);
   for (int i = 0; i < target_level->getNumKeypoints(); ++i)
   {
     const KeyPoint& kp = target_level->getKeypoint(i);
@@ -93,8 +93,8 @@ std::vector<std::string> _createInfoStrings(const fovis::VisualOdometry* odometr
 cv::Mat fovis_ros::visualization::paint(const fovis::VisualOdometry* odometry)
 {
   using namespace fovis;
-  const OdometryFrame* reference_frame = odometry->getReferenceFrame();
-  const OdometryFrame* target_frame = odometry->getTargetFrame();
+  const OdometryFrame::Ptr& reference_frame = odometry->getReferenceFrame();
+  const OdometryFrame::Ptr& target_frame = odometry->getTargetFrame();
 
   int width = target_frame->getLevel(0)->getWidth();
   int height = target_frame->getLevel(0)->getHeight();
@@ -120,14 +120,14 @@ cv::Mat fovis_ros::visualization::paint(const fovis::VisualOdometry* odometry)
 
   for (int level = 0; level < reference_frame->getNumLevels(); ++level)
   {
-    const PyramidLevel* pyramid_level = reference_frame->getLevel(level);
+    const PyramidLevel::Ptr& pyramid_level = reference_frame->getLevel(level);
     for (int i = 0; i < pyramid_level->getNumKeypoints(); ++i)
     {
       _drawKeypoint(*(pyramid_level->getKeypointData(i)), canvas);
     }
   }
       
-  const MotionEstimator* motion_estimator = odometry->getMotionEstimator(); 
+  const MotionEstimator::Ptr& motion_estimator = odometry->getMotionEstimator(); 
   for (int i = 0; i < motion_estimator->getNumMatches(); ++i)
   {
     _drawMatch(motion_estimator->getMatches()[i], canvas);

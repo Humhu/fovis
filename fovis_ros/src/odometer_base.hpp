@@ -220,33 +220,24 @@ protected:
       visual_odometer_->getChangeReferenceFrames();
     fovis_info_msg.fast_threshold =
       visual_odometer_->getFastThreshold();
-    const fovis::OdometryFrame* frame = 
-      visual_odometer_->getTargetFrame();
-    fovis_info_msg.num_total_detected_keypoints =
-      frame->getNumDetectedKeypoints();
+    const fovis::OdometryFrame::Ptr& frame = visual_odometer_->getTargetFrame();
+    fovis_info_msg.num_total_detected_keypoints = frame->getNumDetectedKeypoints();
     fovis_info_msg.num_total_keypoints = frame->getNumKeypoints();
     fovis_info_msg.num_detected_keypoints.resize(frame->getNumLevels());
     fovis_info_msg.num_keypoints.resize(frame->getNumLevels());
     for (int i = 0; i < frame->getNumLevels(); ++i)
     {
-      fovis_info_msg.num_detected_keypoints[i] =
-        frame->getLevel(i)->getNumDetectedKeypoints();
-      fovis_info_msg.num_keypoints[i] =
-        frame->getLevel(i)->getNumKeypoints();
+      fovis_info_msg.num_detected_keypoints[i] = frame->getLevel(i)->getNumDetectedKeypoints();
+      fovis_info_msg.num_keypoints[i] = frame->getLevel(i)->getNumKeypoints();
     }
-    const fovis::MotionEstimator* estimator = 
-      visual_odometer_->getMotionEstimator();
-    fovis_info_msg.motion_estimate_status_code =
-      estimator->getMotionEstimateStatus();
-    fovis_info_msg.motion_estimate_status = 
-      fovis::MotionEstimateStatusCodeStrings[
+    const fovis::MotionEstimator::Ptr& estimator = visual_odometer_->getMotionEstimator();
+    fovis_info_msg.motion_estimate_status_code =estimator->getMotionEstimateStatus();
+    fovis_info_msg.motion_estimate_status = fovis::MotionEstimateStatusCodeStrings[
         fovis_info_msg.motion_estimate_status_code];
     fovis_info_msg.num_matches = estimator->getNumMatches();
     fovis_info_msg.num_inliers = estimator->getNumInliers();
-    fovis_info_msg.num_reprojection_failures =
-      estimator->getNumReprojectionFailures();
-    fovis_info_msg.motion_estimate_valid = 
-      estimator->isMotionEstimateValid();
+    fovis_info_msg.num_reprojection_failures = estimator->getNumReprojectionFailures();
+    fovis_info_msg.motion_estimate_valid = estimator->isMotionEstimateValid();
     ros::WallDuration time_elapsed = ros::WallTime::now() - start_time;
     fovis_info_msg.runtime = time_elapsed.toSec();
     info_pub_.publish(fovis_info_msg);
@@ -272,20 +263,11 @@ private:
     //  new fovis::VisualOdometry(rectification, vo_options_);
 
     // TODO Modify fovis::VisualOdometry so we can set the options on every image
-    const fovis::VisualOdometryOptions& options = getOptions();
-    visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
-                                                                options );
-
-    // store initial transform for later usage
-    getBaseToSensorTransform(info_msg->header.stamp, 
-        info_msg->header.frame_id,
-        initial_base_to_sensor_);
-
-    // print options
+    // const fovis::VisualOdometryOptions& options = getOptions();
     std::stringstream info;
     info << "Initialized fovis odometry with the following options:\n";
-    for (fovis::VisualOdometryOptions::const_iterator iter = options.begin();
-        iter != options.end();
+    for (fovis::VisualOdometryOptions::const_iterator iter = vo_options_.begin();
+        iter != vo_options_.end();
         ++iter)
     {
       std::string key = iter->first;
@@ -293,6 +275,14 @@ private:
       info << key << " = " << iter->second << std::endl;
     }
     ROS_INFO_STREAM(info.str());
+    visual_odometer_ = std::make_shared<fovis::VisualOdometry>( rectification,
+                                                                vo_options_ );
+
+    // store initial transform for later usage
+    getBaseToSensorTransform(info_msg->header.stamp, 
+        info_msg->header.frame_id,
+        initial_base_to_sensor_);
+
   }
 
   /**
